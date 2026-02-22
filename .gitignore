@@ -86,14 +86,14 @@ output.json
 .mcp.json
 .mcp.local.json
 mcp/*.json
-.claude/
+# .claude/
 claude.config.json
 .cursor/
 .aider*
 .continue/
 
 AGENTS.md
-CLAUDE.md
+# CLAUDE.md
 CODEX.md
 GEMINI.md
 
