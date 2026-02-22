@@ -85,6 +85,36 @@ func TestParseBarTypeInvalid(t *testing.T) {
 	}
 }
 
+func TestBarIsSinglePriceTrue(t *testing.T) {
+	bt, _ := ParseBarType("6EH4.XCME-1-MINUTE-LAST-EXTERNAL")
+	bar := Bar{
+		BarType: bt,
+		Open:    NewPrice(1.10000, 5),
+		High:    NewPrice(1.10000, 5),
+		Low:     NewPrice(1.10000, 5),
+		Close:   NewPrice(1.10000, 5),
+		Volume:  NewQuantity(100, 0),
+	}
+	if !bar.IsSinglePrice() {
+		t.Error("expected IsSinglePrice() = true for equal OHLC")
+	}
+}
+
+func TestBarIsSinglePriceFalse(t *testing.T) {
+	bt, _ := ParseBarType("6EH4.XCME-1-MINUTE-LAST-EXTERNAL")
+	bar := Bar{
+		BarType: bt,
+		Open:    NewPrice(1.10000, 5),
+		High:    NewPrice(1.10010, 5),
+		Low:     NewPrice(1.09990, 5),
+		Close:   NewPrice(1.10005, 5),
+		Volume:  NewQuantity(100, 0),
+	}
+	if bar.IsSinglePrice() {
+		t.Error("expected IsSinglePrice() = false for different OHLC")
+	}
+}
+
 func TestBarTypeTopic(t *testing.T) {
 	bt, _ := ParseBarType("6EH4.XCME-1-MINUTE-LAST-EXTERNAL")
 	expected := "data.bars.6EH4.XCME-1-MINUTE-LAST-EXTERNAL"

@@ -16,6 +16,7 @@
 package backtest
 
 import (
+	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/nautechsystems/nautilus_go/pkg/common"
 	"github.com/nautechsystems/nautilus_go/pkg/data"
 	"github.com/nautechsystems/nautilus_go/pkg/model"
+	"github.com/nautechsystems/nautilus_go/pkg/portfolio"
 	"github.com/nautechsystems/nautilus_go/pkg/trading"
 )
 
@@ -38,6 +40,8 @@ type BacktestEngine struct {
 	venues     []VenueConfig
 	strategies []trading.Strategy
 	bars       []model.Bar
+	exchanges  map[string]*SimulatedExchange
+	portfolio  *portfolio.Portfolio
 }
 
 // NewBacktestEngine creates a new BacktestEngine with the given config.
@@ -56,12 +60,16 @@ func NewBacktestEngine(config EngineConfig) *BacktestEngine {
 		cache:      c,
 		dataEngine: de,
 		logger:     logger,
+		exchanges:  make(map[string]*SimulatedExchange),
+		portfolio:  portfolio.NewPortfolio(),
 	}
 }
 
 // AddVenue registers a simulated venue configuration.
 func (e *BacktestEngine) AddVenue(config VenueConfig) {
 	e.venues = append(e.venues, config)
+	ex := NewSimulatedExchange(config.Venue, e.portfolio, e.logger)
+	e.exchanges[config.Venue.Name] = ex
 	e.logger.Info(
 		"Added venue",
 		"venue", config.Venue.Name,
@@ -106,11 +114,28 @@ func (e *BacktestEngine) Run() {
 	contexts := make([]*trading.StrategyContext, len(e.strategies))
 	for i, strat := range e.strategies {
 		ctx := &trading.StrategyContext{
-			Clock:  e.clock,
-			Cache:  e.cache,
-			MsgBus: e.msgbus,
-			Logger: e.logger,
+			Clock:    e.clock,
+			Cache:    e.cache,
+			MsgBus:   e.msgbus,
+			Logger:   e.logger,
+			Portfolio: e.portfolio,
 		}
+
+		// Create OrderFactory for each strategy
+		traderId := model.TraderId{Value: e.config.TraderID}
+		strategyId := model.StrategyId{
+			Value: fmt.Sprintf("Strategy-%d", i),
+		}
+		ctx.OrderFactory = trading.NewOrderFactory(
+			traderId, strategyId, e.clock,
+		)
+
+		// Attach the first exchange (if any) for order routing
+		for _, ex := range e.exchanges {
+			ctx.SetExchange(ex)
+			break
+		}
+
 		contexts[i] = ctx
 		strat.OnStart(ctx)
 	}
@@ -118,7 +143,25 @@ func (e *BacktestEngine) Run() {
 	// Main backtest loop
 	for _, bar := range e.bars {
 		e.clock.SetTime(bar.TsInit)
+
+		// Find exchange for this bar's venue
+		venue := bar.BarType.InstrumentId.Venue.Name
+		if ex, ok := e.exchanges[venue]; ok {
+			ex.ProcessBar(bar)
+		}
+
+		// Update registered indicators before OnBar
+		for _, ctx := range contexts {
+			ctx.UpdateIndicators(bar)
+		}
+
+		// Cache + publish (triggers OnBar via message bus)
 		e.dataEngine.ProcessBar(bar)
+
+		// Fill queued orders after OnBar
+		if ex, ok := e.exchanges[venue]; ok {
+			ex.ProcessOrders()
+		}
 	}
 
 	// Call OnStop for each strategy

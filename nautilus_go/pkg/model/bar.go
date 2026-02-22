@@ -142,6 +142,13 @@ type Bar struct {
 	TsInit  UnixNanos
 }
 
+// IsSinglePrice returns true if all OHLC prices are equal.
+func (b Bar) IsSinglePrice() bool {
+	return b.Open.Raw == b.High.Raw &&
+		b.High.Raw == b.Low.Raw &&
+		b.Low.Raw == b.Close.Raw
+}
+
 func (b Bar) String() string {
 	return fmt.Sprintf(
 		"%s %s %s %s %s %s %d %d",
